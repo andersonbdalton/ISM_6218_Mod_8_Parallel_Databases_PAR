@@ -1,0 +1,42 @@
+-- This script file illustrates the basics
+-- of parallel execution in an Oracle DBMS.
+-- Parallelism is a natural fit in relational
+-- database environments (from any vendor).
+-- Large-scale queries, index creation, and
+-- other expensive operations often benefit
+-- from parallel execution.
+-- dberndt@usf.edu
+
+
+-- Step 1: Create a table if you have not
+-- already done so as part of your earlier work.
+-- This is easy using a CREATE TABLE AS SELECT
+-- (or CTAS) statement.
+
+CREATE TABLE movies AS
+SELECT * FROM relmdb.movies;
+
+
+-- Step 2: Run a simple query.
+-- Even a simple "count" will do.
+-- What does the execution plan look like?
+-- It should be a simple scan of the
+-- table (or an index).
+
+SELECT COUNT(*) FROM movies;
+
+
+-- Step 3: Alter the table to use parallelism.
+-- In Oracle, you can specify the DEGREE of
+-- parallelism (the number of query processes).
+-- This is the simplest method.
+
+ALTER TABLE PARALLEL (DEGREE 4)
+
+
+-- Step 4: Run the query again and look at the
+-- new execution plan, which should include a
+-- PX (parallel execution) coordinator and other
+-- PX steps.
+
+SELECT COUNT(*) FROM movies;

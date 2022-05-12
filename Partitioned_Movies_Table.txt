@@ -1,0 +1,123 @@
+-- CREATE a simple partitioned table structure.
+-- In this case, we use range partitioning based
+-- on year to create partitions by decade.
+-- Time and geography are the two most common
+-- dimensions for partitioning!
+-- Note: After creating the table you should look
+-- at the partitions tab in SQL Developer to
+-- verify the structure was created or query the
+-- USER_TAB_PARTITIONS view.
+-- dberndt@usf.edu
+
+
+
+-- Step 1: Create the table with range partitioning.
+-- Since the table is pretty large (2.7M rows),
+-- the IMDB_MOVIES_PART table is created for just
+-- the years 2000-2005 (around 500K rows).
+-- The order matters in range partitioning with the
+-- "values less than" clause since it acts as a sieve.
+
+CREATE TABLE imdb_movies5yr_part (
+  movie_id NUMBER(10,0),
+  raw_title VARCHAR2(400),
+  raw_year VARCHAR2(100),
+  imdb_id VARCHAR2(10),
+  movie_year NUMBER(4,0))
+PARTITION BY RANGE (movie_year)
+ (PARTITION p2000 VALUES LESS THAN (2001),
+  PARTITION p2001 VALUES LESS THAN (2002),
+  PARTITION p2002 VALUES LESS THAN (2003),
+  PARTITION p2003 VALUES LESS THAN (2004),
+  PARTITION p2004 VALUES LESS THAN (2005),
+  PARTITION p2005 VALUES LESS THAN (2006));
+
+
+
+-- Step 2: Now populate the partitioned table using an
+-- existing table (with a decent amount of data).
+-- The insert filters out the data and uses a couple
+-- clauses to make sure the years are numeric.
+-- Note: Check the partitions tab again to see
+-- the data distribution (after analyzing the table).
+
+INSERT INTO imdb_movies5yr_part (
+  movie_id,
+  raw_title,
+  raw_year,
+  imdb_id,
+  movie_year)  
+SELECT
+  movie_id,
+  raw_title,
+  raw_year,
+  imdb_id,
+  TO_NUMBER(raw_year)
+FROM relmdb.imdb_movies
+WHERE
+  (LENGTH(raw_year) = 4) AND
+  (TRIM(TRANSLATE(raw_year, '0123456789', ' ')) IS NULL) AND
+  (raw_year IN ('2000', '2001', '2002', '2003', '2004', '2005'));
+
+COMMIT;
+
+-- Note: A non-partitioned version of IMDB_MOVIES5YR was created 
+-- in the RELMDB as a comparable query target for you.
+
+
+
+-- Step 3: Force statistics to be collected on the new
+-- partitioned table.  Check the partitions tab in
+-- SQL Developer to confirm the data distributon and
+-- last analyzed date.
+
+ANALYZE TABLE imdb_movies5yr_part COMPUTE STATISTICS;
+
+-- You can also check the partition information using
+-- a system catalog view as well.
+
+SELECT
+  table_name,
+  partition_name,
+  num_rows,
+  avg_row_len,
+  last_analyzed
+FROM user_tab_partitions
+WHERE table_name LIKE 'IMDB%';
+
+
+
+-- Step 4: Now run a query on the target table.
+-- For example, look for a pattern in
+-- a title (like "pulp" as in Pulp Fiction).
+-- Check out the execution plan.
+-- Does the plan use the partitions?
+-- Since, we are specifying only one year,
+-- the plan should be accessing a single partition.
+
+SELECT
+  raw_title,
+  movie_year
+FROM imdb_movies5yr_part
+WHERE
+  (movie_year = 2003) AND
+  (UPPER(raw_title) LIKE '%PULP%');
+
+-- You can try comparing the costs with the same
+-- query against the non-partitioned table
+-- (RELMDB.IMDB_MOVIES5YR was created for you).
+
+
+
+-- Step 5: Try the query again, but this time
+-- expand the years being considered.
+-- Does the plan still use the partitions?
+-- Is it using multiple partitions?
+
+SELECT
+  raw_title,
+  movie_year
+FROM imdb_movies5yr_part
+WHERE
+  (movie_year IN (2003, 2004)) AND
+  (UPPER(raw_title) LIKE '%PULP%');

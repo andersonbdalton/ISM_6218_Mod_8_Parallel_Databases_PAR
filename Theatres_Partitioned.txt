@@ -1,0 +1,147 @@
+-- CREATE partitioned table structure for
+-- the THEATRES table based on the chain id.
+-- The table has more than 7000 rows,
+-- but chains vary widely in size.
+-- So, we should expect a somewhat skewed
+-- distribution of rows across the partitions.
+-- Partitions are most often based on temporal
+-- or geographic attributes used in analytic queries.
+-- Trends over time or geography also tend to
+-- have more predictable distributions of data.
+-- Note: After creating the table you should look
+-- at the partitions tab in SQL Developer to
+-- verify the structure was created or query the
+-- USER_TAB_PARTITIONS view.
+-- dberndt@usf.edu
+
+
+
+-- Step 1: Create the table with range partitioning.
+-- The order matters in range partitioning with the
+-- "values less than" clause since it acts as a sieve.
+
+CREATE TABLE theatres_part (
+  theatre_id NUMBER(10,0) NOT NULL ENABLE,
+  theatre_name VARCHAR2(100) NOT NULL ENABLE,
+  chain_id NUMBER(10,0) NOT NULL ENABLE,
+  city_name VARCHAR2(50),
+  screen_count NUMBER(3,0),
+  imax_flag CHAR(1),
+  iconx_flag CHAR(1),
+  rpx_flag CHAR(1),
+  closed_flag CHAR(1),
+  drive_in_flag CHAR(1),
+  raw_name VARCHAR2(100))
+PARTITION BY RANGE (chain_id)
+ (PARTITION p110 VALUES LESS THAN (110),
+  PARTITION p120 VALUES LESS THAN (120),
+  PARTITION p130 VALUES LESS THAN (130),
+  PARTITION p140 VALUES LESS THAN (140),
+  PARTITION p150 VALUES LESS THAN (150),
+  PARTITION p160 VALUES LESS THAN (160));
+
+
+
+-- Step 2: Now populate the partitioned table using
+-- from the existing table (should be 7-8K rows).
+-- Note: Check the partitions tab again to see
+-- the data distribution (after analyzing the table).
+
+INSERT INTO theatres_part (
+  theatre_id,
+  theatre_name,
+  chain_id,
+  city_name,
+  screen_count,
+  imax_flag,
+  iconx_flag,
+  rpx_flag,
+  closed_flag,
+  drive_in_flag,
+  raw_name)  
+SELECT
+  theatre_id,
+  theatre_name,
+  chain_id,
+  city_name,
+  screen_count,
+  imax_flag,
+  iconx_flag,
+  rpx_flag,
+  closed_flag,
+  drive_in_flag,
+  raw_name
+FROM relmdb.theatres;
+
+COMMIT;
+
+ANALYZE TABLE theatres_part COMPUTE STATISTICS;
+
+
+
+-- Step 3: Check the partitions tab in
+-- SQL Developer to review the data distributon
+-- (and confirm the last analyzed date).
+-- You can also check the partition information using
+-- a system catalog view as well.
+
+SELECT
+  table_name,
+  partition_name,
+  num_rows,
+  avg_row_len,
+  last_analyzed
+FROM user_tab_partitions
+WHERE table_name LIKE 'THEATRES_PART%'
+ORDER BY num_rows DESC;
+
+
+
+-- Step 4: Now query the underlying table
+-- to investigate the distribution of theatres
+-- by chain (including independents).
+-- Is the distribution highly skewed?
+-- How will this affect queries against
+-- the partitioned table?
+
+SELECT
+  tc.chain_id,
+  tc.chain_name,
+  COUNT(*)
+FROM
+  theatre_chains tc
+  INNER JOIN theatres t
+    ON tc.chain_id = t.chain_id
+GROUP BY
+  tc.chain_id,
+  tc.chain_name
+ORDER BY COUNT(*) DESC;
+
+
+
+-- Step 5: Try some queries on the partitioned
+-- table based on the chain id using ranges
+-- that successively expand the number of
+-- partitions needed to resolve the query.
+-- Take note of how the IO cost grows in terms
+-- of "session logical reads."
+-- For example, the chain ids in the range 101-109
+-- should be found in the first partition.
+-- First, does the execution plan use the partitions?
+-- Second, how many partitions are being accessed?
+
+SELECT
+  chain_id,
+  COUNT(*)
+FROM theatres_part
+WHERE
+  chain_id BETWEEN 101 AND 109
+GROUP BY
+  chain_id
+ORDER BY COUNT(*) DESC;
+
+-- Begin expanding the range and note the changes as
+-- additional partitions need to be accessed.
+-- Eventually the whole table (all partitions) will
+-- be accessed to generate the answer set.
+
